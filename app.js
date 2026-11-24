@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, doc, onSnapshot, setDoc, updateDoc, addDoc, deleteDoc, writeBatch, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, collection, doc, onSnapshot, setDoc, updateDoc, addDoc, deleteDoc, writeBatch, getDocs, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig, OWNER_EMAIL } from "./firebase-config.js?v=3";
 
 const fbApp = initializeApp(firebaseConfig);
@@ -53,7 +53,7 @@ onAuthStateChanged(auth, user => {
     $('login-msg').textContent = 'Esta cuenta ('+user.email+') no tiene acceso. Ingresá con '+OWNER_EMAIL+'.';
     signOut(auth); return; }
   $('login').hidden=true; $('app').hidden=false;
-  $('userbar').replaceChildren(h('span',{},user.email), h('button',{type:'button',class:'btn ghost',onclick:()=>signOut(auth)},'Salir'));
+  $('userbar').replaceChildren(h('span',{},user.email), h('button',{type:'button',class:'btn ghost',onclick:importSeed},'Importar'), h('button',{type:'button',class:'btn ghost',onclick:()=>signOut(auth)},'Salir'));
   start();
 });
 
@@ -78,7 +78,7 @@ function renderAgenda(){ const box=$('agenda'); box.textContent='';
 function renderList(){ renderAgenda(); const ul=$('lista'); ul.textContent='';
   if(!S.loaded){ ul.append(h('li',{class:'empty'},'Cargando tus causas…')); return; }
   if(!S.causas.length){ ul.append(h('li',{class:'empty'},'Todavía no hay causas.',h('br'),
-      h('button',{type:'button',class:'btn',style:'margin-top:10px',onclick:importSeed},'Importar mis causas (archivo causas-inicial.json)'))); return; }
+      h('button',{type:'button',class:'btn',style:'margin-top:10px',onclick:importSeed},'Importar causas desde un archivo'))); return; }
   const list=filtered();
   if(!list.length){ ul.append(h('li',{class:'empty'},'Ninguna causa coincide con el filtro.')); return; }
   for (const c of list){ const d=dueInfo(c.proximaFecha);
@@ -148,8 +148,21 @@ function causaForm(c){ const isNew=!c; c=c||{estado:'Activa'};
     field('Junto a (colegas)',inp('conQuien',c.conQuien)),field('Honorarios',inp('honorarios',c.honorarios)),
     field('Resumen del caso',res,true),
     h('div',{class:'full row'},h('button',{type:'submit',class:'btn primary'},isNew?'Crear causa':'Guardar'),
-      h('button',{type:'button',class:'btn',onclick:()=>{ if(isNew){ S.sel=null; renderDetail(); } else { S.editing=false; renderHeader(); } }},'Cancelar')));
+      h('button',{type:'button',class:'btn',onclick:()=>{ if(isNew){ S.sel=null; renderDetail(); } else { S.editing=false; renderHeader(); } }},'Cancelar'),
+      isNew?null:h('span',{style:'margin-left:auto',id:'del-zone'},h('button',{type:'button',class:'btn danger',onclick:()=>askDelete(c)},'Eliminar causa'))));
   return f; }
+function askDelete(c){ const z=$('del-zone'); if(!z) return; z.textContent='';
+  z.append(h('span',{class:'row'},h('span',{class:'hint'},'¿Eliminar "'+(c.nombre||'')+'" con todos sus movimientos? No se puede deshacer.'),
+    h('button',{type:'button',class:'btn danger',onclick:()=>deleteCausa(c)},'Sí, eliminar'),
+    h('button',{type:'button',class:'btn',onclick:()=>{ z.textContent=''; z.append(h('button',{type:'button',class:'btn danger',onclick:()=>askDelete(c)},'Eliminar causa')); }},'No'))); }
+async function deleteCausa(c){
+  try{ S.unsubEv&&S.unsubEv(); S.unsubDocs&&S.unsubDocs();
+    const b=writeBatch(db);
+    for (const sub of ['eventos','docs']){ const snap=await getDocs(collection(db,'causas',c.id,sub)); snap.forEach(d=>b.delete(d.ref)); }
+    b.delete(doc(db,'causas',c.id)); await b.commit();
+    S.sel=null; S.editing=false; try{ history.replaceState(null,'',location.pathname); }catch(e){}
+    document.body.classList.remove('show-detail'); renderDetail(); renderList(); toast('Causa eliminada.'); }
+  catch(e){ toast('No se pudo eliminar ('+(e.code||'error')+').'); } }
 function renderNewEvent(){ const box=$('nuevo-mov'); if(!box) return; box.textContent='';
   let open=false; const toggle=h('button',{type:'button',class:'btn',onclick:()=>{open=!open;form.hidden=!open;toggle.textContent=open?'Cerrar':'+ Cargar movimiento';}},'+ Cargar movimiento');
   const tipo=h('select',{id:'ev-tipo'},TIPOS.map(t=>h('option',{value:t},t)));
