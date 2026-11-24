@@ -1,12 +1,12 @@
-// Pegá acá la configuración de tu proyecto de Firebase
-// (Consola de Firebase > Configuración del proyecto > Tus apps > App web > firebaseConfig)
+// Configuración del proyecto Firebase "biblioteca-causas".
+// Estos datos son públicos por diseño; la protección real está en las reglas de Firestore.
 export const firebaseConfig = {
-  apiKey: "PEGAR_ACA",
-  authDomain: "PEGAR_ACA",
-  projectId: "PEGAR_ACA",
-  storageBucket: "PEGAR_ACA",
-  messagingSenderId: "PEGAR_ACA",
-  appId: "PEGAR_ACA"
+  apiKey: "AIzaSyDvug0mvm9oJeAnaqkJ0-aSDwqiZF9ZZDk",
+  authDomain: "biblioteca-causas.firebaseapp.com",
+  projectId: "biblioteca-causas",
+  storageBucket: "biblioteca-causas.firebasestorage.app",
+  messagingSenderId: "885565308738",
+  appId: "1:885565308738:web:857f68f8a90e3979e012db"
 };
 // Única cuenta que puede entrar
 export const OWNER_EMAIL = "dr.palaciof@gmail.com";
