@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, collection, doc, onSnapshot, setDoc, updateDoc, addDoc, deleteDoc, writeBatch, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { firebaseConfig, OWNER_EMAIL } from "./firebase-config.js";
+import { firebaseConfig, OWNER_EMAIL } from "./firebase-config.js?v=3";
 
 const fbApp = initializeApp(firebaseConfig);
 const auth = getAuth(fbApp);
