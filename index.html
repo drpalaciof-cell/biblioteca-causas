@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Biblioteca de Causas</title>
+<meta name="theme-color" content="#0E5C63">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="login" class="login" hidden>
+  <h1>Biblioteca de Causas</h1>
+  <p class="hint">Ingresá con tu cuenta de Google para ver tus causas.</p>
+  <button class="btn primary" id="btn-login" type="button">Ingresar con Google</button>
+  <p class="hint" id="login-msg"></p>
+</div>
+
+<div class="wrap" id="app" hidden>
+  <header class="top">
+    <div>
+      <h1>Biblioteca de Causas</h1>
+      <p>Dr. Facundo Martín Palacio</p>
+    </div>
+    <div class="row">
+      <span class="userbar" id="userbar"></span>
+      <button class="btn primary" id="btn-nueva" type="button">+ Nueva causa</button>
+    </div>
+  </header>
+  <div id="banner"></div>
+  <div class="app">
+    <div class="pane list-pane">
+      <div class="list-tools">
+        <input id="q" class="search" type="search" placeholder="Buscar por cliente, carátula, expediente o tribunal" aria-label="Buscar causas">
+        <div class="row">
+          <div class="seg" id="seg-estado" role="group" aria-label="Estado"></div>
+          <select class="small" id="sel-fuero" aria-label="Fuero"></select>
+        </div>
+      </div>
+      <div id="agenda"></div>
+      <ul class="causas" id="lista"><li class="empty">Cargando tus causas…</li></ul>
+    </div>
+    <div class="pane detail-pane" id="detalle">
+      <div class="empty">Elegí una causa de la lista para ver su estado, movimientos y documentos.</div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
