@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, collection, doc, onSnapshot, setDoc, updateDoc, addDoc, deleteDoc, writeBatch, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig, OWNER_EMAIL } from "./firebase-config.js?v=3";
 
@@ -34,9 +34,18 @@ function slug(s){ return (String(s||'causa').normalize('NFD').replace(/[̀-ͯ]/g
 const now = () => new Date().toISOString();
 
 /* ---------- auth ---------- */
+const provider = new GoogleAuthProvider();
+provider.setCustomParameters({ prompt: 'select_account' });
+const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+const POPUP_FAIL = ['auth/popup-blocked','auth/popup-closed-by-user','auth/cancelled-popup-request','auth/operation-not-supported-in-this-environment'];
+getRedirectResult(auth).catch(e => { $('login-msg').textContent = 'No se pudo ingresar ('+(e.code||'error')+'). Probá abrir el link directo en Chrome.'; });
 $('btn-login').addEventListener('click', async () => {
-  try { await signInWithPopup(auth, new GoogleAuthProvider()); }
-  catch (e) { $('login-msg').textContent = 'No se pudo ingresar ('+(e.code||'error')+').'; }
+  $('login-msg').textContent = '';
+  if (isMobile) { $('login-msg').textContent = 'Te llevamos a Google…'; return signInWithRedirect(auth, provider); }
+  try { await signInWithPopup(auth, provider); }
+  catch (e) {
+    if (POPUP_FAIL.includes(e.code)) { $('login-msg').textContent = 'Te llevamos a Google…'; return signInWithRedirect(auth, provider); }
+    $('login-msg').textContent = 'No se pudo ingresar ('+(e.code||'error')+').'; }
 });
 onAuthStateChanged(auth, user => {
   if (!user) { $('app').hidden=true; $('login').hidden=false; S.unsubCausas&&S.unsubCausas(); return; }
