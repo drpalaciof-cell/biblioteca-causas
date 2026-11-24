@@ -94,7 +94,7 @@ function importSeed(){
   document.body.append(inp); inp.click(); }
 async function importRows(rows){
   try{
-    for (let i=0;i<rows.length;i+=400){ const b=writeBatch(db); rows.slice(i,i+400).forEach(r=>b.set(doc(db,r.path),r.data)); await b.commit(); }
+    for (let i=0;i<rows.length;i+=400){ const b=writeBatch(db); rows.slice(i,i+400).forEach(r=>b.set(doc(db,r.path),r.data,{merge:true})); await b.commit(); }
     toast('Se importaron '+rows.length+' registros.'); }
   catch(e){ toast('No se pudo importar ('+(e.code||'error')+').'); } }
 
@@ -123,8 +123,50 @@ function renderHeader(){ const box=$('cabecera'); if(!box) return; box.textConte
       h('h2',{},c.nombre||'(sin nombre)')),
     (c.caratula||c.expediente)?h('div',{class:'caratula'},h('span',{class:'lbl'},'Carátula'),c.caratula?h('div',{class:'c'},c.caratula):null,c.expediente?h('div',{class:'e'},'Expte. '+c.expediente):null):null,
     meta.length?h('dl',{class:'meta'},meta.map(([k,v])=>h('div',{},h('dt',{},k),h('dd',{},v)))):null,
+    estadoBox(c),
     c.proximoPaso?h('div',{class:'next'},h('span',{class:'lbl'},'Próximo paso'),h('div',{class:'txt'},c.proximoPaso),d?h('div',{},h('span',{class:'due '+d.cls},d.txt)):null):null,
     c.resumen?h('p',{class:'resumen'},c.resumen):null)); }
+function estadoBox(c){
+  const box=h('div',{class:'estado'});
+  const show=()=>{ box.textContent='';
+    box.append(h('div',{class:'estado-top'},h('span',{class:'lbl'},'En qué quedamos'),
+        c.estadoFecha?h('span',{class:'date'},'al '+fmt(c.estadoFecha)):null,
+        h('button',{type:'button',class:'btn ghost',style:'margin-left:auto',onclick:edit},c.estadoActual?'Actualizar':'Escribir')),
+      c.estadoActual?h('p',{class:'estado-txt'},c.estadoActual):h('p',{class:'hint'},'Todavía no hay un resumen del estado. Escribí en qué quedó la causa.')); };
+  const edit=()=>{ box.textContent=''; const ta=h('textarea',{id:'estado-ta',rows:'6'}); ta.value=c.estadoActual||'';
+    box.append(h('span',{class:'lbl'},'En qué quedamos'),ta,h('div',{class:'row',style:'margin-top:8px'},
+      h('button',{type:'button',class:'btn primary',onclick:async()=>{ try{ await updateDoc(doc(db,'causas',c.id),{estadoActual:ta.value.trim(),estadoFecha:todayStr(),actualizado:now()}); toast('Estado actualizado.'); }catch(e){ toast('No se pudo guardar ('+(e.code||'error')+').'); } }},'Guardar'),
+      h('button',{type:'button',class:'btn',onclick:show},'Cancelar'))); ta.focus(); };
+  show(); return box; }
+
+/* ---------- archivos guardados en Firestore, partidos en trozos ---------- */
+const PARTE=700000, MAX_MB=8;
+function toB64(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]||''); r.onerror=rej; r.readAsDataURL(file); }); }
+async function guardarArchivo(causaId,file,fecha,eventoId){
+  if(file.size>MAX_MB*1024*1024) throw {code:'el archivo supera '+MAX_MB+' MB'};
+  const tipo=file.type||(/\.pdf$/i.test(file.name)?'application/pdf':'application/octet-stream');
+  if(!/^(application\/pdf|image\/)/.test(tipo)) throw {code:'subí un PDF o una imagen'};
+  const b64=await toB64(file); const ref=doc(collection(db,'causas',causaId,'archivos')); const n=Math.ceil(b64.length/PARTE)||1;
+  for(let i=0;i<n;i+=5){ const b=writeBatch(db);
+    for(let k=i;k<Math.min(n,i+5);k++) b.set(doc(db,'causas',causaId,'archivos',ref.id,'partes',String(k).padStart(4,'0')),{d:b64.slice(k*PARTE,(k+1)*PARTE)});
+    await b.commit(); }
+  await setDoc(ref,{nombre:file.name,tipo,size:file.size,partes:n,creado:now()});
+  await addDoc(collection(db,'causas',causaId,'docs'),{nombre:file.name,archivoId:ref.id,tipo,fecha:fecha||todayStr(),eventoId:eventoId||''}); }
+async function abrirArchivo(causaId,x){
+  const w=window.open('','_blank'); if(w){ try{ w.document.title='Abriendo…'; w.document.body.textContent='Abriendo '+(x.nombre||'archivo')+'…'; }catch(e){} }
+  try{ const snap=await getDocs(collection(db,'causas',causaId,'archivos',x.archivoId,'partes'));
+    const b64=snap.docs.sort((a,b)=>a.id.localeCompare(b.id)).map(d=>d.data().d).join('');
+    const bin=atob(b64); const u8=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i);
+    const url=URL.createObjectURL(new Blob([u8],{type:x.tipo||'application/pdf'}));
+    if(w) w.location.href=url; else { const a=h('a',{href:url,target:'_blank',download:x.nombre||'archivo'}); document.body.append(a); a.click(); a.remove(); } }
+  catch(e){ if(w) w.close(); toast('No se pudo abrir el archivo.'); } }
+async function borrarArchivo(causaId,x){
+  if(x.archivoId){ const snap=await getDocs(collection(db,'causas',causaId,'archivos',x.archivoId,'partes')); const b=writeBatch(db); snap.forEach(d=>b.delete(d.ref)); b.delete(doc(db,'causas',causaId,'archivos',x.archivoId)); await b.commit(); }
+  await deleteDoc(doc(db,'causas',causaId,'docs',x.id)); }
+function docLink(causaId,x,label){
+  if(x.archivoId) return h('a',{href:'#',onclick:e=>{e.preventDefault();abrirArchivo(causaId,x);}},label||x.nombre||'Archivo');
+  const u=safeUrl(x.url); return u?h('a',{href:u,target:'_blank',rel:'noopener'},label||x.nombre||'Documento'):h('span',{},label||x.nombre||'Documento'); }
+
 function field(lbl,input,full){ return h('label',{class:'f'+(full?' full':'')},lbl,input); }
 function causaForm(c){ const isNew=!c; c=c||{estado:'Activa'};
   const inp=(id,val,type)=>h('input',{id:'cf-'+id,type:type||'text',value:val||''});
@@ -159,6 +201,8 @@ async function deleteCausa(c){
   try{ S.unsubEv&&S.unsubEv(); S.unsubDocs&&S.unsubDocs();
     const b=writeBatch(db);
     for (const sub of ['eventos','docs']){ const snap=await getDocs(collection(db,'causas',c.id,sub)); snap.forEach(d=>b.delete(d.ref)); }
+    const arch=await getDocs(collection(db,'causas',c.id,'archivos'));
+    for (const a of arch.docs){ const ps=await getDocs(collection(db,'causas',c.id,'archivos',a.id,'partes')); ps.forEach(d=>b.delete(d.ref)); b.delete(a.ref); }
     b.delete(doc(db,'causas',c.id)); await b.commit();
     S.sel=null; S.editing=false; try{ history.replaceState(null,'',location.pathname); }catch(e){}
     document.body.classList.remove('show-detail'); renderDetail(); renderList(); toast('Causa eliminada.'); }
@@ -171,42 +215,55 @@ function renderNewEvent(){ const box=$('nuevo-mov'); if(!box) return; box.textCo
       const c=current(); if(!c) return; const titulo=$('ev-tit').value.trim(); if(!titulo){ toast('Escribí un título para el movimiento.'); return; }
       const btn=form.querySelector('button[type=submit]'); btn.disabled=true;
       const ev={fecha:$('ev-fecha').value||todayStr(),tipo:tipo.value,titulo,detalle:det.value.trim(),link:$('ev-link').value.trim(),creado:now()};
-      try{ await addDoc(collection(db,'causas',c.id,'eventos'),ev); await updateDoc(doc(db,'causas',c.id),{actualizado:now()});
+      try{ const ref=await addDoc(collection(db,'causas',c.id,'eventos'),ev);
+        const f=$('ev-file').files[0]; if(f){ $('ev-tit').disabled=true; toast('Subiendo archivo…'); await guardarArchivo(c.id,f,ev.fecha,ref.id); }
+        const upd={actualizado:now()}; if($('ev-estado').checked){ upd.estadoActual=ev.titulo+(ev.detalle?'. '+ev.detalle:''); upd.estadoFecha=ev.fecha; }
+        await updateDoc(doc(db,'causas',c.id),upd); $('ev-tit').disabled=false;
         form.reset(); $('ev-fecha').value=todayStr(); toast('Movimiento cargado.'); }
       catch(err){ toast('No se pudo cargar ('+(err.code||'error')+').'); }
       btn.disabled=false; }},
-    field('Fecha',h('input',{id:'ev-fecha',type:'date',value:todayStr()})),field('Tipo',tipo),
+    field('Fecha (la del cargo, si es un escrito)',h('input',{id:'ev-fecha',type:'date',value:todayStr()})),field('Tipo',tipo),
     field('Título',h('input',{id:'ev-tit',type:'text',placeholder:'Ej.: Presenté hábeas data por mail al Juzgado Federal'}),true),
     field('Detalle',det,true),
-    field('Enlace (Drive, chat, expediente web)',h('input',{id:'ev-link',type:'url',placeholder:'https://…'}),true),
+    field('Escrito con cargo u otro archivo (PDF o foto, hasta 8 MB)',h('input',{id:'ev-file',type:'file',accept:'application/pdf,image/*'})),
+    field('Enlace (opcional)',h('input',{id:'ev-link',type:'url',placeholder:'https://…'})),
+    h('label',{class:'full row',style:'font-size:.88rem;gap:6px'},h('input',{id:'ev-estado',type:'checkbox',checked:true}),'Usar este movimiento como nuevo "En qué quedamos"'),
     h('div',{class:'full'},h('button',{type:'submit',class:'btn primary'},'Guardar movimiento')));
   box.append(toggle,form); }
 function renderTimeline(){ const ol=$('timeline'); if(!ol) return; ol.textContent='';
   const evs=[...S.eventos].sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha))||String(b.creado||'').localeCompare(String(a.creado||'')));
   if(!evs.length){ ol.append(h('li',{class:'empty'},'Sin movimientos cargados.')); return; }
   for (const ev of evs){ const link=safeUrl(ev.link); let confirmBox=null;
-    const acts=h('div',{class:'acts'},link?h('a',{href:link,target:'_blank',rel:'noopener'},ev.tipo==='Trabajo con Claude'?'Abrir el chat':'Abrir enlace'):null);
+    const adj=S.docs.filter(x=>x.eventoId===ev.id);
+    const acts=h('div',{class:'acts'},link?h('a',{href:link,target:'_blank',rel:'noopener'},ev.tipo==='Trabajo con Claude'?'Abrir el chat':'Abrir enlace'):null,
+      adj.map(x=>docLink(S.sel,x,'Ver '+(x.nombre||'archivo'))));
     acts.append(h('button',{type:'button',class:'btn ghost',onclick:()=>{ if(confirmBox){confirmBox.remove();confirmBox=null;return;}
       confirmBox=h('span',{class:'row'},h('span',{class:'hint'},'¿Borrar este movimiento?'),
         h('button',{type:'button',class:'btn danger',onclick:async()=>{ try{ await deleteDoc(doc(db,'causas',S.sel,'eventos',ev.id)); toast('Movimiento borrado.'); }catch(e){ toast('No se pudo borrar.'); } }},'Borrar'),
         h('button',{type:'button',class:'btn',onclick:()=>{confirmBox.remove();confirmBox=null;}},'No')); acts.append(confirmBox); }},'Borrar'));
     ol.append(h('li',{class:'ev'},h('div',{class:'when'},h('div',{class:'date'},fmt(ev.fecha))),
       h('div',{style:'min-width:0'},h('div',{class:'tipo'+(ev.tipo==='Trabajo con Claude'?' claude':'')},ev.tipo||'Nota'),h('div',{class:'tt'},ev.titulo||''),ev.detalle?h('p',{class:'dd'},ev.detalle):null,acts))); } }
+
 function renderDocs(){ const sec=$('sec-docs'); if(!sec) return; sec.textContent='';
-  let open=false; const toggle=h('button',{type:'button',class:'btn',onclick:()=>{open=!open;form.hidden=!open;}},'+ Agregar documento');
+  const up=h('label',{class:'btn'},'+ Subir archivo',h('input',{type:'file',accept:'application/pdf,image/*',hidden:true,onchange:async e=>{ const f=e.target.files[0]; if(!f) return;
+      toast('Subiendo archivo…'); try{ await guardarArchivo(S.sel,f,todayStr(),''); toast('Archivo subido.'); }catch(err){ toast('No se pudo subir ('+(err.code||'error')+').'); } e.target.value=''; }}));
+  let open=false; const toggle=h('button',{type:'button',class:'btn ghost',onclick:()=>{open=!open;form.hidden=!open;}},'+ Enlace');
   const form=h('form',{class:'grid formbox',hidden:true,style:'margin-bottom:10px',onsubmit:async e=>{ e.preventDefault();
       const nombre=$('dc-nom').value.trim(), url=$('dc-url').value.trim(); if(!nombre||!safeUrl(url)){ toast('Poné el nombre y un enlace que empiece con https://'); return; }
-      try{ await addDoc(collection(db,'causas',S.sel,'docs'),{nombre,url,fecha:$('dc-fecha').value||todayStr(),eventoId:''}); form.reset(); toast('Documento agregado.'); }
+      try{ await addDoc(collection(db,'causas',S.sel,'docs'),{nombre,url,fecha:$('dc-fecha').value||todayStr(),eventoId:''}); form.reset(); toast('Enlace agregado.'); }
       catch(err){ toast('No se pudo guardar ('+(err.code||'error')+').'); } }},
-    field('Nombre',h('input',{id:'dc-nom',type:'text',placeholder:'Ej.: Hábeas data firmado'}),true),
-    field('Enlace (Google Drive u otro)',h('input',{id:'dc-url',type:'url',placeholder:'https://drive.google.com/…'})),
+    field('Nombre',h('input',{id:'dc-nom',type:'text'}),true),
+    field('Enlace',h('input',{id:'dc-url',type:'url',placeholder:'https://…'})),
     field('Fecha',h('input',{id:'dc-fecha',type:'date',value:todayStr()})),
-    h('div',{class:'full'},h('button',{type:'submit',class:'btn primary'},'Guardar documento')));
-  sec.append(h('h3',{},h('span',{},'Documentos'),toggle),form);
+    h('div',{class:'full'},h('button',{type:'submit',class:'btn primary'},'Guardar enlace')));
+  sec.append(h('h3',{},h('span',{},'Documentos'),h('span',{class:'row'},up,toggle)),form);
   const docs=[...S.docs].sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)));
-  if(!docs.length){ sec.append(h('div',{class:'empty'},'Sin documentos. Agregá el enlace de Drive de cada escrito o constancia.')); return; }
-  sec.append(h('ul',{class:'docs'},docs.map(x=>{ const u=safeUrl(x.url);
-    return h('li',{},u?h('a',{href:u,target:'_blank',rel:'noopener'},x.nombre||'Documento'):h('span',{},x.nombre||'Documento',h('span',{class:'hint'},' (sin enlace)')),h('span',{class:'date'},fmt(x.fecha))); }))); }
+  if(!docs.length){ sec.append(h('div',{class:'empty'},'Sin documentos. Subí escritos con cargo, cédulas o constancias en PDF o foto.')); return; }
+  sec.append(h('ul',{class:'docs'},docs.map(x=>{ let conf=null; const li=h('li',{});
+    const del=h('button',{type:'button',class:'btn ghost',onclick:()=>{ if(conf){conf.remove();conf=null;return;}
+      conf=h('span',{class:'row'},h('button',{type:'button',class:'btn danger',onclick:async()=>{ try{ await borrarArchivo(S.sel,x); toast('Documento borrado.'); }catch(e){ toast('No se pudo borrar.'); } }},'Borrar'),
+        h('button',{type:'button',class:'btn',onclick:()=>{conf.remove();conf=null;}},'No')); li.append(conf); }},'Borrar');
+    li.append(docLink(S.sel,x),h('span',{class:'row'},h('span',{class:'date'},fmt(x.fecha)),del)); return li; }))); }
 
 /* ---------- boot ---------- */
 $('q').addEventListener('input',e=>{S.q=e.target.value;renderList();});

@@ -121,3 +121,8 @@ label.f textarea{min-height:84px;resize:vertical}
 .login{max-width:420px;margin:12vh auto 0;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:28px;display:grid;gap:14px;text-align:center}
 .login h1{font:600 1.6rem/1.2 var(--serif);margin:0}
 .userbar{display:flex;gap:8px;align-items:center;font-size:.85rem;color:var(--muted)}
+.estado{border:1px solid var(--line);border-radius:10px;padding:14px 16px;background:var(--bg);display:grid;gap:6px}
+.estado .lbl{font:600 .7rem/1.2 var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.estado-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.estado-txt{white-space:pre-wrap;margin:0;max-width:75ch}
+.estado textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--surface);color:var(--ink);font:inherit}
